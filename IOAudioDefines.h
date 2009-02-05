@@ -2,24 +2,21 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -71,6 +68,9 @@
 
 #define kIOAudioDeviceConfigurationAppKey	"IOAudioDeviceConfigurationApplication"
 
+#define kIOAudioDeviceCanBeDefaults			"IOAudioDeviceCanBeDefaults"
+
+#define kIOAudioDeviceModelIDKey			"IOAudioDeviceModelID"
 
 /*****
  *
@@ -94,9 +94,22 @@
  */
 #define kIOAudioEngineOutputSampleLatencyKey		"IOAudioEngineOutputSampleLatency"
 
+/*!
+ * @defined kIOAudioStreamSampleLatencyKey
+ * @abstract The key in the IORegistry for the IOAudioStream output sample latency key
+ * @discussion Tells the HAL how much latency is on a particular stream.  If two streams
+ * on the same engine have different latencies (e.g. one is analog, one is digital), then
+ * set this property on both streams to inform the HAL of the latency differences.  Alternately,
+ * you can set the engine latency, and just include the latency additional to that for the particular
+ * stream.  The HAL will add the engine and stream latency numbers together to get the total latency.
+ */
+#define kIOAudioStreamSampleLatencyKey				"IOAudioStreamSampleLatency"
+
 #define kIOAudioEngineInputSampleLatencyKey			"IOAudioEngineInputSampleLatency"
 
 #define kIOAudioEngineSampleOffsetKey				"IOAudioEngineSampleOffset"
+
+#define kIOAudioEngineInputSampleOffsetKey			"IOAudioEngineInputSampleOffset"
 
 #define kIOAudioEngineNumSampleFramesPerBufferKey	"IOAudioEngineNumSampleFramesPerBuffer"
 
@@ -109,6 +122,10 @@
 #define kIOAudioEngineGlobalUniqueIDKey				"IOAudioEngineGlobalUniqueID"
 
 #define kIOAudioEngineDescriptionKey				"IOAudioEngineDescription"
+
+#define kIOAudioEngineClockIsStableKey				"IOAudioEngineClockIsStable"
+
+#define kIOAudioEngineClockDomainKey				"IOAudioEngineClockDomain"
 
 /*!
  * @defined kIOAudioEngineFullChannelNamesKey
@@ -130,6 +147,8 @@
  * @discussion 
  */
 #define	kIOAudioEngineFullChannelNumberNamesKey		"IOAudioEngineChannelNumberNames"
+
+#define kIOAudioEngineFlavorKey						"IOAudioEngineFlavor"
 
 /*****
  *
@@ -359,8 +378,12 @@
 
 #define kIOAudioLevelControlRangesKey		"IOAudioLevelControlRanges"
 
+#define kIOAudioLevelControlUseLinearScale	"IOAudioLevelControlUseLinearScale"
+
 #define kIOAudioSelectorControlAvailableSelectionsKey	"IOAudioSelectorControlAvailableSelections"
 #define kIOAudioSelectorControlSelectionValueKey		"IOAudioSelectorControlSelectionValue"
 #define kIOAudioSelectorControlSelectionDescriptionKey	"IOAudioSelectorControlSelectionDescriptionKey"
+
+#define kIOAudioSelectorControlClockSourceKey				"IOAudioSelectorControlClockSourceKey"
 
 #endif /* _IOAUDIODEFINES_H */

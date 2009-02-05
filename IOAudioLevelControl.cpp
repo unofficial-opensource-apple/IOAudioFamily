@@ -2,35 +2,35 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *  
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *                                             
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *  
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *      
  * @APPLE_LICENSE_HEADER_END@
  */ 
     
 #include <IOKit/audio/IOAudioLevelControl.h>
 #include <IOKit/audio/IOAudioTypes.h>
 #include <IOKit/audio/IOAudioDefines.h>
+#include <IOKit/audio/IOAudioDebug.h>
 
 #define super IOAudioControl
 
 OSDefineMetaClassAndStructors(IOAudioLevelControl, IOAudioControl)
-OSMetaClassDefineReservedUnused(IOAudioLevelControl, 0);
+
+OSMetaClassDefineReservedUsed(IOAudioLevelControl, 0);
+
 OSMetaClassDefineReservedUnused(IOAudioLevelControl, 1);
 OSMetaClassDefineReservedUnused(IOAudioLevelControl, 2);
 OSMetaClassDefineReservedUnused(IOAudioLevelControl, 3);
@@ -67,6 +67,12 @@ IOAudioLevelControl *IOAudioLevelControl::createPassThruVolumeControl (SInt32 in
                                         cntrlID,
                                         kIOAudioLevelControlSubTypeVolume,
                                         kIOAudioControlUsagePassThru);
+}
+
+// OSMetaClassDefineReservedUnused(IOAudioLevelControl, 0);
+void IOAudioLevelControl::setLinearScale(bool useLinearScale)
+{
+    setProperty(kIOAudioLevelControlUseLinearScale, useLinearScale, sizeof(bool)*8);
 }
 
 // Original code...
@@ -237,7 +243,14 @@ IOReturn IOAudioLevelControl::addRange(SInt32 minRangeValue,
     
     if (ranges) {
         OSDictionary *newRange;
+		OSArray *newRanges;
+		OSArray *oldRanges;
         
+		oldRanges = ranges;
+        newRanges = OSArray::withArray(ranges);
+		if (!newRanges)
+			return kIOReturnNoMemory;
+		
         newRange = OSDictionary::withCapacity(4);
         if (newRange) {
             OSNumber *number;
@@ -258,7 +271,10 @@ IOReturn IOAudioLevelControl::addRange(SInt32 minRangeValue,
             newRange->setObject(kIOAudioLevelControlMaxDBKey, number);
             number->release();
             
-            ranges->setObject(newRange);
+            newRanges->setObject(newRange);
+            setProperty(kIOAudioLevelControlRangesKey, newRanges);
+			ranges = newRanges;
+			oldRanges->release();
             
             newRange->release();
         } else {
@@ -282,11 +298,15 @@ IOReturn IOAudioLevelControl::validateValue(OSObject *newValue)
     OSNumber *number;
     
     number = OSDynamicCast(OSNumber, newValue);
-    
+	
+	audioDebugIOLog(3, "IOAudioLevelControl::validateValue[%p] (%p)", this, newValue);
+   
     if (number) {
         SInt32 newIntValue;
         
         newIntValue = (SInt32)number->unsigned32BitValue();
+
+		audioDebugIOLog(3, "IOAudioLevelControl::validateValue[%p] - newIntValue = %ld, min = %ld, max = %ld", this, newIntValue, minValue, maxValue);
         
         if ((newIntValue >= minValue) && (newIntValue <= maxValue)) {
             result = kIOReturnSuccess;

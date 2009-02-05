@@ -2,24 +2,21 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -29,6 +26,7 @@
 #include <IOKit/IOUserClient.h>
 #include <IOKit/audio/IOAudioEngine.h>
 #include <IOKit/audio/IOAudioTypes.h>
+#include <IOKit/IOBufferMemoryDescriptor.h>
 
 class IOAudioEngine;
 class IOAudioStream;
@@ -54,6 +52,7 @@ typedef struct IOAudioClientBuffer {
     struct IOAudioClientBuffer	*nextClip;
     struct IOAudioClientBuffer	*previousClip;
     struct IOAudioClientBuffer	*nextClient;
+	IOAudioBufferDataDescriptor *bufferDataDescriptor;
 } IOAudioClientBuffer;
 
 typedef struct IOAudioClientBufferExtendedInfo {
@@ -80,7 +79,7 @@ protected:
     IOWorkLoop					*workLoop;
     IOCommandGate				*commandGate;
 
-    IOExternalMethod			methods[kIOAudioEngineNumCalls];
+    IOExternalMethod			old_methods[5];		// It's size can't be changed for binary compatibility reasons, no longer used.
     IOExternalTrap				trap;
 
     task_t						clientTask;
@@ -96,23 +95,37 @@ protected:
 protected:
     struct ExpansionData {
 		IOAudioClientBufferExtendedInfo		*extendedInfo;
+		IOExternalMethod					methods[kIOAudioEngineNumCalls];		// This size can be changed, this is the new methods pointer
+ 		UInt32								classicMode;
+//		void								*securityToken;
 	};
-    
+
     ExpansionData *reserved;
 
 public:
 	// New code added here...
 	virtual IOReturn registerClientParameterBuffer (void *parameterBuffer, UInt32 bufferSetID);
 	virtual IOAudioClientBufferExtendedInfo * findExtendedInfo(UInt32 bufferSetID);
+	virtual IOReturn getNearestStartTime(IOAudioStream *audioStream, IOAudioTimeStamp *ioTimeStamp, UInt32 isInput);
+	virtual IOReturn getClientNearestStartTime(IOAudioStream *audioStream, IOAudioTimeStamp *ioTimeStamp, UInt32 isInput);
+	virtual IOReturn safeRegisterClientBuffer(UInt32 audioStreamIndex, void *sourceBuffer, UInt32 bufSizeInBytes, UInt32 bufferSetID);
+#if !(defined(__ppc__) && defined(KPI_10_4_0_PPC_COMPAT))
+    // OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 5);	
+    virtual bool initWithAudioEngine(IOAudioEngine *engine, task_t task, void *securityToken, UInt32 type, OSDictionary *properties);
+#endif
 
 private:
     OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 0);
     OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 1);
-
-    OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 2);
-    OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 3);
-    OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 4);
+    OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 2);
+    OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 3);
+    OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 4);
+#if !(defined(__ppc__) && defined(KPI_10_4_0_PPC_COMPAT))
+    OSMetaClassDeclareReservedUsed(IOAudioEngineUserClient, 5);
+#else
     OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 5);
+#endif
+
     OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 6);
     OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 7);
     OSMetaClassDeclareReservedUnused(IOAudioEngineUserClient, 8);
@@ -167,8 +180,10 @@ protected:
 public:
 
     static IOAudioEngineUserClient *withAudioEngine(IOAudioEngine *engine, task_t clientTask, void *securityToken, UInt32 type);
+    static IOAudioEngineUserClient *withAudioEngine(IOAudioEngine *engine, task_t clientTask, void *securityToken, UInt32 type, OSDictionary *properties);
 
     virtual bool initWithAudioEngine(IOAudioEngine *engine, task_t task, void *securityToken, UInt32 type);
+
     virtual void free();
     virtual void freeClientBufferSetList();
     virtual void freeClientBuffer(IOAudioClientBuffer *clientBuffer);
@@ -182,10 +197,12 @@ public:
     
     static IOReturn registerBufferAction(OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
     static IOReturn unregisterBufferAction(OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
-    
+
     virtual IOReturn registerClientBuffer(IOAudioStream *audioStream, void *sourceBuffer, UInt32 bufSizeInBytes, UInt32 bufferSetID);
     virtual IOReturn unregisterClientBuffer(void *sourceBuffer, UInt32 bufferSetID);
     
+    static IOReturn getNearestStartTimeAction(OSObject *owner, void *arg1, void *arg2, void *arg3, void *arg4);
+
     virtual IOAudioClientBufferSet *findBufferSet(UInt32 bufferSetID);
     virtual void removeBufferSet(IOAudioClientBufferSet *bufferSet);
     

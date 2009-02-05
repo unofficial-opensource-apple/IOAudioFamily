@@ -2,24 +2,21 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -180,7 +177,6 @@ protected:
     struct ExpansionData {
 		unsigned long long			idleSleepDelayTime;
 		IOTimerEventSource *		idleTimer;
-		IOService *					ourProvider;
 	};
     
     ExpansionData *reserved;
@@ -189,8 +185,10 @@ public:
 	static void idleAudioSleepHandlerTimer(OSObject *owner, IOTimerEventSource *sender);
 	virtual IOReturn setAggressiveness(unsigned long type, unsigned long newLevel);
 
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 0);
 	virtual void setDeviceTransportType(const UInt32 transportType);
 
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 1);
     /*!
 	 * @function setIdleAudioSleepTime
      * @abstract This function is to be called by a driver that doesn't want to be told about the audio
@@ -204,42 +202,71 @@ public:
      * @param sleepDelay The amount of time, in nanoseconds, before the hardware should be told to go idle.
      */
 	virtual void setIdleAudioSleepTime(unsigned long long sleepDelay);
+
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 2);
 	virtual void scheduleIdleAudioSleep(void);
 
-private:
-    OSMetaClassDeclareReservedUsed(IOAudioDevice, 0);
-    OSMetaClassDeclareReservedUsed(IOAudioDevice, 1);
-    OSMetaClassDeclareReservedUsed(IOAudioDevice, 2);
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 3);
+    /*!
+	 * @function setConfigurationApplicationBundle
+     * @abstract This function is to be called if an external configuration application is available to set
+	 * which application to launch.
+	 * @discussion This is useful for device drivers that are too complex to be represented by the Sound Preferences
+	 * panel.  The bundle ID is a more flexible way of specifying where the application is than a hard coded path.
+     * @param bundleID The bundle ID of the application to be launched by the HAL for configuration of the device and its engine(s).
+     */
+	virtual void setConfigurationApplicationBundle(const char *bundleID);
 
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 3);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 4);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 5);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 6);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 7);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 8);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 9);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 10);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 11);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 12);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 13);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 14);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 15);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 16);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 17);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 18);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 19);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 20);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 21);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 22);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 23);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 24);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 25);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 26);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 27);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 28);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 29);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 30);
-    OSMetaClassDeclareReservedUnused(IOAudioDevice, 31);
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 4);
+    /*!
+	 * @function setDeviceCanBeDefault
+     * @abstract This function is to be called to tell CoreAudio if this device shouldn't be a default device.
+	 * @discussion This is useful for device drivers that don't want to be a default device.  Can be called with
+	 * kIOAudioDeviceCanBeDefaultNothing to prevent CoreAudio from allowing this device to be any default device, or it
+	 * can be called with any combination of kIOAudioDeviceCanBeDefaultInput, kIOAudioDeviceCanBeDefaultOutput, or
+	 * kIOAudioDeviceCanBeSystemOutput.  The default is 
+	 * (kIOAudioDeviceCanBeDefaultInput | kIOAudioDeviceCanBeDefaultOutput | kIOAudioDeviceCanBeSystemOutput).
+     * @param defaultsFlags The flags to instruct CoreAudio to allow this device to be only the indicated default devices.
+     */
+	virtual void setDeviceCanBeDefault(UInt32 defaultsFlags);
+
+	// OSMetaClassDeclareReservedUsed(IOAudioDevice, 5);
+	virtual void setDeviceModelName(const char * modelName);
+
+private:
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 0);
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 1);
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 2);
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 3);
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 4);
+	OSMetaClassDeclareReservedUsed(IOAudioDevice, 5);
+
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 6);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 7);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 8);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 9);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 10);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 11);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 12);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 13);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 14);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 15);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 16);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 17);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 18);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 19);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 20);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 21);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 22);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 23);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 24);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 25);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 26);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 27);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 28);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 29);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 30);
+	OSMetaClassDeclareReservedUnused(IOAudioDevice, 31);
 
 public:
     // Initialization
@@ -297,8 +324,7 @@ public:
      * @param The service provider nub for the device.
      */
     virtual void stop(IOService *provider);
-
-	virtual bool willTerminate(IOService *provider, IOOptionBits options);
+    virtual bool willTerminate(IOService *provider, IOOptionBits options);
 
     /*!
      * @function initHardware

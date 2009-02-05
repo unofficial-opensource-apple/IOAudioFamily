@@ -2,29 +2,25 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#undef DEBUG_CALLS
-
+#include <IOKit/audio/IOAudioDebug.h>
 #include <IOKit/audio/IOAudioControl.h>
 #include <IOKit/audio/IOAudioControlUserClient.h>
 #include <IOKit/audio/IOAudioTypes.h>
@@ -38,10 +34,10 @@
 
 OSDefineMetaClassAndStructors(IOAudioControl, IOService)
 OSMetaClassDefineReservedUsed(IOAudioControl, 0);
+OSMetaClassDefineReservedUsed(IOAudioControl, 1);
+OSMetaClassDefineReservedUsed(IOAudioControl, 2);
+OSMetaClassDefineReservedUsed(IOAudioControl, 3);
 
-OSMetaClassDefineReservedUnused(IOAudioControl, 1);
-OSMetaClassDefineReservedUnused(IOAudioControl, 2);
-OSMetaClassDefineReservedUnused(IOAudioControl, 3);
 OSMetaClassDefineReservedUnused(IOAudioControl, 4);
 OSMetaClassDefineReservedUnused(IOAudioControl, 5);
 OSMetaClassDefineReservedUnused(IOAudioControl, 6);
@@ -64,23 +60,88 @@ OSMetaClassDefineReservedUnused(IOAudioControl, 22);
 OSMetaClassDefineReservedUnused(IOAudioControl, 23);
 
 // New code
+
+// OSMetaClassDefineReservedUsed(IOAudioControl, 3);
+IOReturn IOAudioControl::createUserClient(task_t task, void *securityID, UInt32 type, IOAudioControlUserClient **newUserClient, OSDictionary *properties)
+{
+    IOReturn result = kIOReturnSuccess;
+    IOAudioControlUserClient *userClient;
+    
+    userClient = IOAudioControlUserClient::withAudioControl(this, task, securityID, type, properties);
+    
+    if (userClient) {
+        *newUserClient = userClient;
+    } else {
+        result = kIOReturnNoMemory;
+    }
+    
+    return result;
+}
+
 void IOAudioControl::sendChangeNotification(UInt32 notificationType)
 {
     OSCollectionIterator *iterator;
     IOAudioControlUserClient *client;
     
-    if (!userClients) {
+    if (!userClients || !isStarted) {
         return;
     }
 
-    iterator = OSCollectionIterator::withCollection(userClients);
-    if (iterator) {
-        while (client = (IOAudioControlUserClient *)iterator->getNextObject()) {
-            client->sendChangeNotification(notificationType);
-        }
+	// If we're doing a config change, just queue the notification for later.
+	if (reserved->providerEngine->configurationChangeInProgress) {
+		OSNumber *notificationNumber;
+		UInt32		i, count;
+		bool		dupe = FALSE;
 
-        iterator->release();
-    }
+		if (!reserved->notificationQueue) {
+			reserved->notificationQueue = OSArray::withCapacity (1);
+			if (!reserved->notificationQueue) {
+				return;
+			}
+		}
+
+		notificationNumber = OSNumber::withNumber (notificationType, sizeof (notificationType) * 8);
+		if (!notificationNumber)
+			return;
+
+		// Check to see if this is a unique notification, there is no need to send dupes.
+		count = reserved->notificationQueue->getCount ();
+		for (i = 0; i < count; i++) {
+			if (notificationNumber->isEqualTo ((OSNumber *)reserved->notificationQueue->getObject (i))) {
+				dupe = TRUE;
+				break;		// no need to send duplicate notifications
+			}
+		}
+		if (!dupe) {
+			reserved->notificationQueue->setObject (notificationNumber);
+		}
+		notificationNumber->release ();
+	} else {
+		iterator = OSCollectionIterator::withCollection(userClients);
+		if (iterator) {
+			while (client = (IOAudioControlUserClient *)iterator->getNextObject()) {
+				client->sendChangeNotification(notificationType);
+			}
+	
+			iterator->release();
+		}
+	}
+}
+
+void IOAudioControl::sendQueuedNotifications(void)
+{
+	UInt32				i;
+	UInt32				count;
+
+	// Send our the queued notications and release the queue.
+	if (reserved && reserved->notificationQueue) {
+		count = reserved->notificationQueue->getCount ();
+		for (i = 0; i < count; i++) {
+			sendChangeNotification(((OSNumber *)reserved->notificationQueue->getObject(i))->unsigned32BitValue());
+		}
+		reserved->notificationQueue->release();
+		reserved->notificationQueue = NULL;
+	}
 }
 
 // Original code here...
@@ -149,6 +210,13 @@ bool IOAudioControl::init(UInt32 type,
         return false;
     }
     
+	reserved = (ExpansionData *)IOMalloc (sizeof(struct ExpansionData));
+	if (!reserved) {
+		return false;
+	}
+
+	reserved->providerEngine = NULL;
+	reserved->notificationQueue = NULL;
     isStarted = false;
 
     return true;
@@ -183,6 +251,11 @@ void IOAudioControl::setCoreAudioPropertyID(UInt32 propertyID)
     setUsage(kIOAudioControlUsageCoreAudioProperty);
 }
 
+void IOAudioControl::setReadOnlyFlag()
+{
+    setProperty(kIOAudioControlValueIsReadOnlyKey, (bool)true);
+}
+
 UInt32 IOAudioControl::getType()
 {
     return type;
@@ -200,9 +273,7 @@ UInt32 IOAudioControl::getUsage()
 
 void IOAudioControl::free()
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::free()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::free()", this);
 
     if (userClients) {
         // should we do some sort of notification here?
@@ -229,6 +300,16 @@ void IOAudioControl::free()
         workLoop = NULL;
     }
 
+	if (reserved) {
+		if (reserved->notificationQueue) {
+			reserved->notificationQueue->release();
+			reserved->notificationQueue = NULL;
+		}
+
+		IOFree (reserved, sizeof (struct ExpansionData));
+		reserved = NULL;
+	}
+
     super::free();
 }
 
@@ -239,6 +320,7 @@ bool IOAudioControl::start(IOService *provider)
     }
 
     isStarted = true;
+	reserved->providerEngine = OSDynamicCast (IOAudioEngine, provider);
 
     return true;
 }
@@ -263,9 +345,7 @@ bool IOAudioControl::attachAndStart(IOService *provider)
 
 void IOAudioControl::stop(IOService *provider)
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::stop(%p)\n", this, provider);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::stop(%p)", this, provider);
 
     if (userClients && (userClients->getCount() > 0)) {
         IOCommandGate *cg;
@@ -338,13 +418,11 @@ IOReturn IOAudioControl::setValue(OSObject *newValue)
 {
     IOReturn result = kIOReturnSuccess;
     
-#ifdef DEBUG_CALLS
     if (OSDynamicCast(OSNumber, newValue)) {
-        IOLog("IOAudioControl[%p]::setValue(int = %d)\n", this, ((OSNumber *)newValue)->unsigned32BitValue());
+        audioDebugIOLog(3, "IOAudioControl[%p]::setValue(int = %d)", this, ((OSNumber *)newValue)->unsigned32BitValue());
     } else {
-        IOLog("IOAudioControl[%p]::setValue(%p)\n", this, newValue);
+        audioDebugIOLog(3, "IOAudioControl[%p]::setValue(%p)", this, newValue);
     }
-#endif
 
     if (newValue) {
         if (!value || !value->isEqualTo(newValue)) {
@@ -354,10 +432,10 @@ IOReturn IOAudioControl::setValue(OSObject *newValue)
                 if (result == kIOReturnSuccess) {
                     result = updateValue(newValue);
                 } else {
-                    IOLog("IOAudioControl[%p]::setValue(%p) - Error 0x%x received from driver - value not set!\n", this, newValue, result);
+                    audioDebugIOLog(2, "IOAudioControl[%p]::setValue(%p) - Error 0x%x received from driver - value not set!", this, newValue, result);
                 }
             } else {
-                IOLog("IOAudioControl[%p]::setValue(%p) - Error 0x%x - invalid value.\n", this, newValue, result);
+                audioDebugIOLog(2, "IOAudioControl[%p]::setValue(%p) - Error 0x%x - invalid value.", this, newValue, result);
             }
         }
     } else {
@@ -417,9 +495,7 @@ IOReturn IOAudioControl::hardwareValueChanged(OSObject *newValue)
 {
     IOReturn result = kIOReturnSuccess;
 
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::hardwareValueChanged(%p)\n", this, newValue);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::hardwareValueChanged(%p)", this, newValue);
     
     if (newValue) {
         if (!value || !value->isEqualTo(newValue)) {
@@ -475,9 +551,7 @@ IOReturn IOAudioControl::performValueChange(OSObject *newValue)
 {
     IOReturn result = kIOReturnError;
     
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::performValueChange(%p)\n", this, newValue);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::performValueChange(%p)", this, newValue);
 
     if (valueChangeHandler.intHandler != NULL) {
         switch(valueChangeHandlerType) {
@@ -653,14 +727,57 @@ IOReturn IOAudioControl::createUserClient(task_t task, void *securityID, UInt32 
 
 IOReturn IOAudioControl::newUserClient(task_t task, void *securityID, UInt32 type, IOUserClient **handler)
 {
+#if __i386__
+	return kIOReturnUnsupported;
+#else
     IOReturn result = kIOReturnSuccess;
     IOAudioControlUserClient *client = NULL;
     
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::newUserClient()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::newUserClient()", this);
 
     result = createUserClient(task, securityID, type, &client);
+    
+    if ((result == kIOReturnSuccess) && (client != NULL)) {
+        if (!client->attach(this)) {
+            client->release();
+            result = kIOReturnError;
+        } else if (!client->start(this) || !userClients) {
+            client->detach(this);
+            client->release();
+            result = kIOReturnError;
+        } else {
+            IOCommandGate *cg;
+            
+            cg = getCommandGate();
+            
+            if (cg) {
+                result = cg->runAction(addUserClientAction, client);
+    
+                if (result == kIOReturnSuccess) {
+                    *handler = client;
+                }
+            } else {
+                result = kIOReturnError;
+            }
+        }
+    }
+
+    return result;
+#endif
+}
+
+IOReturn IOAudioControl::newUserClient(task_t task, void *securityID, UInt32 type, OSDictionary *properties, IOUserClient **handler)
+{
+    IOReturn result = kIOReturnSuccess;
+    IOAudioControlUserClient *client = NULL;
+    
+	if (kIOReturnSuccess == newUserClient(task, securityID, type, handler)) {
+		return kIOReturnSuccess;
+	}	
+	
+    audioDebugIOLog(3, "IOAudioControl[%p]::newUserClient()", this);
+
+    result = createUserClient(task, securityID, type, &client, properties);
     
     if ((result == kIOReturnSuccess) && (client != NULL)) {
         if (!client->attach(this)) {
@@ -692,9 +809,7 @@ IOReturn IOAudioControl::newUserClient(task_t task, void *securityID, UInt32 typ
 
 void IOAudioControl::clientClosed(IOAudioControlUserClient *client)
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::clientClosed(%p)\n", this, client);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::clientClosed(%p)", this, client);
 
     if (client) {
         IOCommandGate *cg;
@@ -751,9 +866,7 @@ IOReturn IOAudioControl::detachUserClientsAction(OSObject *owner, void *arg1, vo
 
 IOReturn IOAudioControl::addUserClient(IOAudioControlUserClient *newUserClient)
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::addUserClient(%p)\n", this, newUserClient);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::addUserClient(%p)", this, newUserClient);
 
     assert(userClients);
 
@@ -764,9 +877,7 @@ IOReturn IOAudioControl::addUserClient(IOAudioControlUserClient *newUserClient)
 
 IOReturn IOAudioControl::removeUserClient(IOAudioControlUserClient *userClient)
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::removeUserClient(%p)\n", this, userClient);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::removeUserClient(%p)", this, userClient);
 
     assert(userClients);
 
@@ -787,9 +898,7 @@ IOReturn IOAudioControl::detachUserClients()
 {
     IOReturn result = kIOReturnSuccess;
     
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControl[%p]::detachUserClients()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControl[%p]::detachUserClients()", this);
     
     assert(userClients);
     

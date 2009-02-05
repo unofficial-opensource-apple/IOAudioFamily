@@ -2,24 +2,21 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -29,6 +26,7 @@
 #include <libkern/OSTypes.h>
 #include <mach/message.h>
 #include <device/device_types.h>
+#include <IOKit/ndrvsupport/IOMacOSTypes.h>
 /*!
  * @enum IOAudioEngineMemory
  * @abstract Used to identify the type of memory requested by a client process to be mapped into its process space
@@ -42,6 +40,8 @@ typedef enum _IOAudioEngineMemory {
     kIOAudioStatusBuffer 			= 0,
     kIOAudioSampleBuffer			= 1,
     kIOAudioMixBuffer				= 2,
+	kIOAudioBytesInInputBuffer		= 3,
+	kIOAudioBytesInOutputBuffer		= 4
 } IOAudioEngineMemory;
 
 /*!
@@ -54,11 +54,12 @@ typedef enum _IOAudioEngineCalls {
     kIOAudioEngineCallUnregisterClientBuffer		= 1,
     kIOAudioEngineCallGetConnectionID				= 2,
     kIOAudioEngineCallStart							= 3,
-    kIOAudioEngineCallStop							= 4
+    kIOAudioEngineCallStop							= 4,
+	kIOAudioEngineCallGetNearestStartTime			= 5
 } IOAudioEngineCalls;
 
 /*! @defined kIOAudioEngineNumCalls The number of elements in the IOAudioEngineCalls enum. */
-#define kIOAudioEngineNumCalls		5
+#define kIOAudioEngineNumCalls		6
 
 typedef enum _IOAudioEngineTraps {
     kIOAudioEngineTrapPerformClientIO				= 0
@@ -132,6 +133,14 @@ typedef struct _IOAudioStreamFormatExtension {
     UInt32	fBytesPerPacket;
 } IOAudioStreamFormatExtension;
 
+typedef struct _IOAudioBufferDataDescriptor {
+	UInt32	fActualDataByteSize;
+	UInt32	fActualNumSampleFrames;
+	UInt32	fTotalDataByteSize;
+	UInt32	fNominalDataByteSize;
+	Byte	fData[kVariableLengthArray];
+} IOAudioBufferDataDescriptor;
+
 #define kStreamDataDescriptorInvalidVersion				0
 #define kStreamDataDescriptorCurrentVersion				1
 
@@ -147,6 +156,89 @@ typedef struct _IOAudioSampleIntervalDescriptor {
 } IOAudioSampleIntervalDescriptor;
 
 /*!
+    @struct         SMPTETime
+    @abstract       A structure for holding a SMPTE time.
+    @field          fSubframes
+                        The number of subframes in the full message.
+    @field          fSubframeDivisor
+                        The number of subframes per frame (typically 80).
+    @field          fCounter
+                        The total number of messages received.
+    @field          fType
+                        The kind of SMPTE time using the SMPTE time type constants.
+    @field          fFlags
+                        A set of flags that indicate the SMPTE state.
+    @field          fHours
+                        The number of hourse in the full message.
+    @field          fMinutes
+                        The number of minutes in the full message.
+    @field          fSeconds
+                        The number of seconds in the full message.
+    @field          fFrames
+                        The number of frames in the full message.
+*/
+typedef struct _IOAudioSMPTETime
+{
+    SInt16  fSubframes;
+    SInt16  fSubframeDivisor;
+    UInt32  fCounter;
+    UInt32  fType;
+    UInt32  fFlags;
+    SInt16  fHours;
+    SInt16  fMinutes;
+    SInt16  fSeconds;
+    SInt16  fFrames;
+
+} IOAudioSMPTETime;
+
+//	constants describing SMPTE types (taken from the MTC spec)
+enum
+{
+	kIOAudioSMPTETimeType24			= 0,
+	kIOAudioSMPTETimeType25			= 1,
+	kIOAudioSMPTETimeType30Drop		= 2,
+	kIOAudioSMPTETimeType30			= 3,
+	kIOAudioSMPTETimeType2997		= 4,
+	kIOAudioSMPTETimeType2997Drop	= 5
+};
+
+//	flags describing a SMPTE time stamp
+enum
+{
+	kIOAudioSMPTETimeValid		= (1L << 0),	//	the full time is valid
+	kIOAudioSMPTETimeRunning	= (1L << 1)		//	time is running
+};
+
+//	A struct for encapsulating the parts of a time stamp. The flags
+//	say which fields are valid.
+typedef struct _IOAudioTimeStamp
+{
+	UInt64				fSampleTime;	//	the absolute sample time, was a Float64
+	UInt64				fHostTime;		//	the host's root timebase's time
+	UInt64				fRateScalar;	//	the system rate scalar, was a Float64
+	UInt64				fWordClockTime;	//	the word clock time
+	IOAudioSMPTETime	fSMPTETime;		//	the SMPTE time
+	UInt32				fFlags;			//	the flags indicate which fields are valid
+	UInt32				fReserved;		//	reserved, pads the structure out to force 8 byte alignment
+} IOAudioTimeStamp;
+
+//	flags for the AudioTimeStamp sturcture
+enum
+{
+	kIOAudioTimeStampSampleTimeValid	= (1L << 0),
+	kIOAudioTimeStampHostTimeValid		= (1L << 1),
+	kIOAudioTimeStampRateScalarValid	= (1L << 2),
+	kIOAudioTimeStampWordClockTimeValid	= (1L << 3),
+	kIOAudioTimeStampSMPTETimeValid		= (1L << 4)
+};
+
+//	Some commonly used combinations of timestamp flags
+enum
+{
+	kIOAudioTimeStampSampleHostTimeValid	= (kIOAudioTimeStampSampleTimeValid | kIOAudioTimeStampHostTimeValid)
+};
+
+/*!
 * @enum IOAudioStreamDirection
  * @abstract Represents the direction of an IOAudioStream
  * @constant kAudioOutput Output buffer
@@ -158,6 +250,12 @@ typedef enum _IOAudioStreamDirection {
     kIOAudioStreamDirectionInput	= 1
 } IOAudioStreamDirection;
 
+enum {
+	kIOAudioDeviceCanBeDefaultNothing	= 0,
+	kIOAudioDeviceCanBeDefaultInput		= (1L << 0),
+	kIOAudioDeviceCanBeDefaultOutput	= (1L << 1),
+	kIOAudioDeviceCanBeSystemOutput		= (1L << 2)
+};
 
 /*!
  * @defined kIOAudioEngineDefaultMixBufferSampleSize
@@ -243,17 +341,23 @@ enum {
 };
 
 enum {
-    kIOAudioLevelControlSubTypeVolume			= 'vlme',
-	kIOAudioLevelControlSubTypeLFEVolume		= 'subv',
-	kIOAudioLevelControlSubTypePRAMVolume		= 'pram',
-    kIOAudioToggleControlSubTypeMute			= 'mute',
-	kIOAudioToggleControlSubTypeLFEMute			= 'subm',
-	kIOAudioToggleControlSubTypeiSubAttach		= 'atch',
-    kIOAudioSelectorControlSubTypeOutput		= 'outp',
-    kIOAudioSelectorControlSubTypeInput			= 'inpt',
-    kIOAudioSelectorControlSubTypeClockSource	= 'clck',
-    kIOAudioSelectorControlSubTypeDestination	= 'dest',
-	kIOAudioSelectorControlSubTypeChannelImpedance	= 'cimp'
+    kIOAudioLevelControlSubTypeVolume						= 'vlme',
+	kIOAudioLevelControlSubTypeLFEVolume					= 'subv',
+	kIOAudioLevelControlSubTypePRAMVolume					= 'pram',
+    kIOAudioToggleControlSubTypeMute						= 'mute',
+    kIOAudioToggleControlSubTypeSolo						= 'solo',
+	kIOAudioToggleControlSubTypeLFEMute						= 'subm',
+	kIOAudioToggleControlSubTypeiSubAttach					= 'atch',
+    kIOAudioSelectorControlSubTypeOutput					= 'outp',
+    kIOAudioSelectorControlSubTypeInput						= 'inpt',
+    kIOAudioSelectorControlSubTypeClockSource				= 'clck',
+    kIOAudioSelectorControlSubTypeDestination				= 'dest',
+	kIOAudioSelectorControlSubTypeChannelNominalLineLevel	= 'nlev',
+	kIOAudioSelectorControlSubTypeChannelLevelPlus4dBu		= '4dbu',
+	kIOAudioSelectorControlSubTypeChannelLevelMinus10dBV	= '10db',
+	kIOAudioSelectorControlSubTypeChannelLevelMinus20dBV	= '20db',
+	kIOAudioSelectorControlSubTypeChannelLevelMicLevel		= 'micl',
+	kIOAudioSelectorControlSubTypeChannelLevelInstrumentLevel		= 'istl'
 };
 
 enum {
@@ -301,7 +405,8 @@ enum {
     kIOAudioStreamSampleFormatAC3			= 'ac-3',
     kIOAudioStreamSampleFormat1937AC3		= 'cac3',
     kIOAudioStreamSampleFormat1937MPEG1		= 'mpg1',
-    kIOAudioStreamSampleFormat1937MPEG2		= 'mpg2'
+    kIOAudioStreamSampleFormat1937MPEG2		= 'mpg2',
+	kIOAudioStreamSampleFormatTimeCode		= 'time'		//	a stream of IOAudioTimeStamp structures that capture any incoming time code information
 };
 
 enum {
@@ -311,17 +416,35 @@ enum {
 };
 
 enum {
-    kIOAudioStreamAlignmentLowByte		= 0,
-    kIOAudioStreamAlignmentHighByte		= 1
+	kIOAudioClockSelectorTypeInternal			= 'int ',
+	kIOAudioClockSelectorTypeExternal			= 'ext ',
+	kIOAudioClockSelectorTypeAESEBU				= 'asbu',
+	kIOAudioClockSelectorTypeTOSLink			= 'tosl',
+	kIOAudioClockSelectorTypeSPDIF				= 'spdf',
+	kIOAudioClockSelectorTypeADATOptical		= 'adto',
+	kIOAudioClockSelectorTypeADAT9Pin			= 'adt9',
+	kIOAudioClockSelectorTypeSMPTE				= 'smpt',
+	kIOAudioClockSelectorTypeVideo				= 'vdeo',
+	kIOAudioClockSelectorTypeControl			= 'cnrl',
+	kIOAudioClockSelectorTypeOther				= 'othr'
 };
 
 enum {
-    kIOAudioStreamByteOrderBigEndian		= 0,
-    kIOAudioStreamByteOrderLittleEndian		= 1
+    kIOAudioStreamAlignmentLowByte					= 0,
+    kIOAudioStreamAlignmentHighByte					= 1
 };
 
 enum {
-    kIOAudioLevelControlNegativeInfinity	= 0xffffffff
+    kIOAudioStreamByteOrderBigEndian				= 0,
+    kIOAudioStreamByteOrderLittleEndian				= 1
+};
+
+enum {
+    kIOAudioLevelControlNegativeInfinity			= 0xffffffff
+};
+
+enum {
+    kIOAudioNewClockDomain							= 0xffffffff
 };
 
 // Device connection types
@@ -332,7 +455,8 @@ enum {
 	kIOAudioDeviceTransportTypeFireWire				= '1394',
 	kIOAudioDeviceTransportTypeNetwork				= 'ntwk',
 	kIOAudioDeviceTransportTypeWireless				= 'wrls',
-	kIOAudioDeviceTransportTypeOther				= 'othr'
+	kIOAudioDeviceTransportTypeOther				= 'othr',
+	kIOAudioDeviceTransportTypeBluetooth			= 'blue'
 };
 
 // types that go nowhere

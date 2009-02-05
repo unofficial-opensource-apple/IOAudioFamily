@@ -2,29 +2,25 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
-#undef DEBUG_CALLS
-
+#include <IOKit/audio/IOAudioDebug.h>
 #include <IOKit/audio/IOAudioControlUserClient.h>
 #include <IOKit/audio/IOAudioControl.h>
 #include <IOKit/audio/IOAudioTypes.h>
@@ -32,13 +28,14 @@
 
 #include <IOKit/IOLib.h>
 #include <IOKit/IOCommandGate.h>
+#include <IOKit/IOKitKeys.h>
 
 #define super IOUserClient
 
 OSDefineMetaClassAndStructors(IOAudioControlUserClient, IOUserClient)
 OSMetaClassDefineReservedUsed(IOAudioControlUserClient, 0);
+OSMetaClassDefineReservedUsed(IOAudioControlUserClient, 1);
 
-OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 1);
 OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 2);
 OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 3);
 OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 4);
@@ -55,6 +52,38 @@ OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 14);
 OSMetaClassDefineReservedUnused(IOAudioControlUserClient, 15);
 
 // New code here
+
+// OSMetaClassDefineReservedUsed(IOAudioControlUserClient, 1);
+bool IOAudioControlUserClient::initWithAudioControl(IOAudioControl *control, task_t task, void *securityID, UInt32 type, OSDictionary *properties)
+{
+	// Declare Rosetta compatibility
+	if (properties) {
+		properties->setObject(kIOUserClientCrossEndianCompatibleKey, kOSBooleanTrue);
+	}
+	
+    if (!initWithTask(task, securityID, type, properties)) {
+        return false;
+    }
+/*
+	// For 3019260
+	if (clientHasPrivilege(securityID, kIOClientPrivilegeLocalUser)) {
+		// You don't have enough privileges to control the audio
+		return false;
+	}
+*/
+    if (!control) {
+        return false;
+    }
+
+    audioControl = control;
+	audioControl->retain();
+    clientTask = task;
+    notificationMessage = 0;
+
+    return true;
+}
+
+// OSMetaClassDefineReservedUsed(IOAudioControlUserClient, 0);
 void IOAudioControlUserClient::sendChangeNotification(UInt32 notificationType)
 {
     if (notificationMessage) {
@@ -66,6 +95,22 @@ void IOAudioControlUserClient::sendChangeNotification(UInt32 notificationType)
             IOLog("IOAudioControlUserClient: sendRangeChangeNotification() failed - msg_send returned: %d\n", kr);
         }
     }
+}
+
+IOAudioControlUserClient *IOAudioControlUserClient::withAudioControl(IOAudioControl *control, task_t clientTask, void *securityID, UInt32 type, OSDictionary *properties)
+{
+    IOAudioControlUserClient *client;
+
+    client = new IOAudioControlUserClient;
+
+    if (client) {
+        if (!client->initWithAudioControl(control, clientTask, securityID, type, properties)) {
+            client->release();
+            client = 0;
+        }
+    }
+    
+    return client;
 }
 
 // Original code here...
@@ -90,7 +135,13 @@ bool IOAudioControlUserClient::initWithAudioControl(IOAudioControl *control, tas
     if (!initWithTask(task, securityID, type)) {
         return false;
     }
-
+/*
+	// For 3019260
+	if (clientHasPrivilege(securityID, kIOClientPrivilegeLocalUser)) {
+		// You don't have enough privileges to control the audio
+		return false;
+	}
+*/
     if (!control) {
         return false;
     }
@@ -105,23 +156,28 @@ bool IOAudioControlUserClient::initWithAudioControl(IOAudioControl *control, tas
 
 void IOAudioControlUserClient::free()
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControlUserClient[%p]::free()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControlUserClient[%p]::free()", this);
     
     if (notificationMessage) {
         IOFreeAligned(notificationMessage, sizeof(IOAudioNotificationMessage));
         notificationMessage = 0;
     }
 
+	if (audioControl) {
+		audioControl->release ();
+		audioControl = 0;
+	}
+
+	if (reserved) {
+		IOFree (reserved, sizeof(struct ExpansionData));
+	}
+
     super::free();
 }
 
 IOReturn IOAudioControlUserClient::clientClose()
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControlUserClient[%p]::clientClose()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControlUserClient[%p]::clientClose()", this);
 
     if (audioControl) {
 		if (!audioControl->isInactive () && !isInactive()) {
@@ -136,9 +192,7 @@ IOReturn IOAudioControlUserClient::clientClose()
 
 IOReturn IOAudioControlUserClient::clientDied()
 {
-#ifdef DEBUG_CALLS
-    IOLog("IOAudioControlUserClient[%p]::clientDied()\n", this);
-#endif
+    audioDebugIOLog(3, "IOAudioControlUserClient[%p]::clientDied()", this);
 
     return clientClose();
 }

@@ -2,24 +2,21 @@
  * Copyright (c) 1998-2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
- * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
- * 
- * This file contains Original Code and/or Modifications of Original Code
- * as defined in and that are subject to the Apple Public Source License
- * Version 2.0 (the 'License'). You may not use this file except in
- * compliance with the License. Please obtain a copy of the License at
- * http://www.opensource.apple.com/apsl/ and read it before using this
- * file.
- * 
- * The Original Code and all software distributed under the License are
- * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ *
+ * The contents of this file constitute Original Code as defined in and
+ * are subject to the Apple Public Source License Version 1.1 (the
+ * "License").  You may not use this file except in compliance with the
+ * License.  Please obtain a copy of the License at
+ * http://www.apple.com/publicsource and read it before using this file.
+ *
+ * This Original Code and all software distributed under the License are
+ * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
  * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
- * Please see the License for the specific language governing rights and
- * limitations under the License.
- * 
+ * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
+ * License for the specific language governing rights and limitations
+ * under the License.
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -53,6 +50,46 @@ OSMetaClassDefineReservedUnused(IOAudioSelectorControl, 14);
 OSMetaClassDefineReservedUnused(IOAudioSelectorControl, 15);
 
 // New code
+IOAudioSelectorControl *IOAudioSelectorControl::createOutputClockSelector(SInt32 initialValue,
+                                                                    UInt32 channelID,
+																	UInt32 clockSource,
+                                                                    const char *channelName,
+                                                                    UInt32 cntrlID)
+{
+	IOAudioSelectorControl *clockControl;
+
+	if (clockControl = create (initialValue, 
+                    channelID, 
+                    channelName, 
+                    cntrlID, 
+                    kIOAudioSelectorControlSubTypeClockSource, 
+                    kIOAudioControlUsageOutput)) {
+        clockControl->setProperty(kIOAudioSelectorControlClockSourceKey, clockSource);
+	}
+
+	return clockControl;
+}
+
+IOAudioSelectorControl *IOAudioSelectorControl::createInputClockSelector(SInt32 initialValue,
+                                                                    UInt32 channelID,
+																	UInt32 clockSource,
+                                                                    const char *channelName,
+                                                                    UInt32 cntrlID)
+{
+	IOAudioSelectorControl *clockControl;
+
+	if (clockControl = create (initialValue, 
+                    channelID, 
+                    channelName, 
+                    cntrlID, 
+                    kIOAudioSelectorControlSubTypeClockSource, 
+                    kIOAudioControlUsageInput)) {
+        clockControl->setProperty(kIOAudioSelectorControlClockSourceKey, clockSource);
+	}
+
+	return clockControl;
+}
+
 IOAudioSelectorControl *IOAudioSelectorControl::createOutputSelector(SInt32 initialValue,
                                                                     UInt32 channelID,
                                                                     const char *channelName,
@@ -69,11 +106,18 @@ IOAudioSelectorControl *IOAudioSelectorControl::createOutputSelector(SInt32 init
 IOReturn IOAudioSelectorControl::removeAvailableSelection(SInt32 selectionValue)
 {
     OSCollectionIterator *iterator;
+	OSArray *newSelections;
+	OSArray *oldAvailableSelections;
     IOReturn result = kIOReturnNotFound;
 
     assert(availableSelections);
 
-    iterator = OSCollectionIterator::withCollection(availableSelections);
+	oldAvailableSelections = availableSelections;
+	newSelections = OSArray::withArray(availableSelections);
+	if (!newSelections)
+		return kIOReturnNoMemory;
+
+    iterator = OSCollectionIterator::withCollection(newSelections);
     if (iterator) {
         OSDictionary *	selection;
 		UInt32			index;
@@ -86,12 +130,15 @@ IOReturn IOAudioSelectorControl::removeAvailableSelection(SInt32 selectionValue)
 
             if (sValue && ((SInt32)sValue->unsigned32BitValue() == selectionValue)) {
 				// Remove the selected dictionary from the array
-				availableSelections->removeObject(index);
+				newSelections->removeObject(index);
 				result = kIOReturnSuccess;
                 break;
             }
 			index++;
         }
+		availableSelections = newSelections;
+        setProperty(kIOAudioSelectorControlAvailableSelectionsKey, availableSelections);
+		oldAvailableSelections->release();
 
         iterator->release();
     }
@@ -124,11 +171,18 @@ IOReturn IOAudioSelectorControl::replaceAvailableSelection(SInt32 selectionValue
 IOReturn IOAudioSelectorControl::replaceAvailableSelection(SInt32 selectionValue, OSString *selectionDescription)
 {
     OSCollectionIterator *iterator;
-    IOReturn result = kIOReturnNotFound;
-
+	OSArray *newSelections;
+	OSArray *oldAvailableSelections;
+    IOReturn result = kIOReturnSuccess;
+    
     assert(availableSelections);
 
-    iterator = OSCollectionIterator::withCollection(availableSelections);
+	oldAvailableSelections = availableSelections;
+	newSelections = OSArray::withArray(availableSelections);
+	if (!newSelections)
+		return kIOReturnNoMemory;
+
+    iterator = OSCollectionIterator::withCollection(newSelections);
     if (iterator) {
         OSDictionary *	selection;
 		UInt32			index;
@@ -141,12 +195,15 @@ IOReturn IOAudioSelectorControl::replaceAvailableSelection(SInt32 selectionValue
 
             if (sValue && ((SInt32)sValue->unsigned32BitValue() == selectionValue)) {
 				// Replace the selected dictionary in the array
-				availableSelections->replaceObject(index, selectionDescription);
+				newSelections->replaceObject(index, selectionDescription);
 				result = kIOReturnSuccess;
                 break;
             }
 			index++;
         }
+		availableSelections = newSelections;
+        setProperty(kIOAudioSelectorControlAvailableSelectionsKey, availableSelections);
+		oldAvailableSelections->release();
 
         iterator->release();
     }
@@ -262,8 +319,15 @@ IOReturn IOAudioSelectorControl::addAvailableSelection(SInt32 selectionValue, co
 
 IOReturn IOAudioSelectorControl::addAvailableSelection(SInt32 selectionValue, OSString *selectionDescription)
 {
+	OSArray *newSelections;
+	OSArray *oldAvailableSelections;
     IOReturn result = kIOReturnSuccess;
     
+	oldAvailableSelections = availableSelections;
+	newSelections = OSArray::withArray(availableSelections);
+	if (!newSelections)
+		return kIOReturnNoMemory;
+
     if (selectionDescription == NULL) {
         result = kIOReturnBadArgument;
     } else {
@@ -282,12 +346,15 @@ IOReturn IOAudioSelectorControl::addAvailableSelection(SInt32 selectionValue, OS
                 if (number) {
                     newSelection->setObject(kIOAudioSelectorControlSelectionValueKey, number);
                     newSelection->setObject(kIOAudioSelectorControlSelectionDescriptionKey, selectionDescription);
-                    availableSelections->setObject(newSelection);
+                    newSelections->setObject(newSelection);
 
                     number->release();
                 } else {
                     result = kIOReturnError;
                 }
+				availableSelections = newSelections;
+				setProperty(kIOAudioSelectorControlAvailableSelectionsKey, availableSelections);
+				oldAvailableSelections->release();
                 
                 newSelection->release();
             } else {
